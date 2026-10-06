@@ -1,0 +1,1609 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot } from 'firebase/firestore';
+
+// --- FIREBASE CONFIGURATION ---
+let app, auth, db;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+try {
+  if (typeof __firebase_config !== 'undefined') {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (e) {
+  console.error("Firebase init error:", e);
+}
+
+// --- CONFIGURATION & DATA ---
+const APP_CONFIG = {
+  schoolName: "SMP NEGERI 1 SEMARANG",
+  appName: "RUMAH DIGITAL SMEPSA",
+  tagline: "Belajar Cerdas, Literat, Numerat, Siap TKA.",
+  classes: [
+    "7A", "7B", "7C", "7D", "7E", "7F", "7G", "7H", "7I",
+    "8A", "8B", "8C", "8D", "8E", "8F", "8G", "8H", "8I",
+    "9A", "9B", "9C", "9D", "9E", "9F", "9G", "9H", "9I"
+  ]
+};
+
+const INITIAL_TEACHERS_DATABASE = [
+  { nip: "198001012005011001", name: "Dra. Hj. Siti Aminah, M.Pd", subject: "Matematika", password: "guru123" },
+  { nip: "198505122010012002", name: "Ahmad Fauzi, S.Pd", subject: "Bahasa Indonesia", password: "guru123" },
+  { nip: "199003202014021003", name: "Sri Lestari, S.Pd", subject: "IPA", password: "guru123" },
+  { nip: "198212102008012004", name: "Budi Santoso, S.Pd", subject: "IPS", password: "guru123" },
+  { nip: "197804152003121005", name: "Drs. Joko Widodo", subject: "Bahasa Inggris", password: "guru123" },
+  { nip: "198809092015032006", name: "Dewi Lestari, S.Pd", subject: "Pend. Pancasila", password: "guru123" },
+  { nip: "198402282010011007", name: "M. Zarkasih, S.Ag", subject: "Pend. Agama", password: "guru123" },
+  { nip: "199106112019031008", name: "Rian Hidayat, S.Pd", subject: "PJOK", password: "guru123" },
+  { nip: "198711302012122009", name: "Fitri Handayani, S.Sn", subject: "Seni Budaya", password: "guru123" },
+  { nip: "198605142011011010", name: "Eko Prasetyo, S.Kom", subject: "Informatika", password: "guru123" },
+  { nip: "198908222016022011", name: "Siti Rahmawati, S.Pd", subject: "Bahasa Daerah", password: "guru123" },
+];
+
+const SUBJECTS = [
+  { id: "bi", name: "Bahasa Indonesia", icon: "📖", color: "bg-blue-100 text-blue-600", border: "border-blue-200" },
+  { id: "mtk", name: "Matematika", icon: "🔢", color: "bg-red-100 text-red-600", border: "border-red-200" },
+  { id: "ipa", name: "IPA", icon: "🔬", color: "bg-green-100 text-green-600", border: "border-green-200" },
+  { id: "ips", name: "IPS", icon: "🌍", color: "bg-orange-100 text-orange-600", border: "border-orange-200" },
+  { id: "bing", name: "Bahasa Inggris", icon: "💬", color: "bg-purple-100 text-purple-600", border: "border-purple-200" },
+  { id: "ppkn", name: "Pend. Pancasila", icon: "🛡", color: "bg-red-50 text-red-700", border: "border-red-200" },
+  { id: "pai", name: "Pend. Agama", icon: "🕌", color: "bg-emerald-100 text-emerald-600", border: "border-emerald-200" },
+  { id: "pjok", name: "PJOK", icon: "⚽", color: "bg-yellow-100 text-yellow-600", border: "border-yellow-200" },
+  { id: "seni", name: "Seni Budaya / Prakarya", icon: "🎨", color: "bg-pink-100 text-pink-600", border: "border-pink-200" },
+  { id: "tik", name: "Informatika", icon: "💻", color: "bg-cyan-100 text-cyan-600", border: "border-cyan-200" },
+  { id: "mulok", name: "Bahasa Daerah", icon: "🎭", color: "bg-amber-100 text-amber-600", border: "border-amber-200" }
+];
+
+const LEVELS = [
+  { name: "🌱 SMART BEGINNER", min: 0, max: 100 },
+  { name: "🌿 SMART LEARNER", min: 101, max: 250 },
+  { name: "🌳 SMART ACHIEVER", min: 251, max: 500 },
+  { name: "⭐ SMART CHAMPION", min: 501, max: 750 },
+  { name: "🏆 SMART MASTER", min: 751, max: 9999 }
+];
+
+const APP_LINKS = {
+  detektifSiber: "https://mariamargareta1387-afk.github.io/detektif-siber/",
+  gformSeniBudaya9: "https://docs.google.com/forms/d/e/1FAIpQLSfPnDauEIpuM6xkhaPxoy8bUtfm4_VQYf2DCXtDRA3qEP5Yow/viewform?usp=sharing&ouid=109376192904840625421",
+  gformKka7: "https://docs.google.com/forms/d/e/1FAIpQLSebqpFfOuuGuYS8ageCD7TwnF1oWoTdXhzpQP0gMJtyXYz5Mw/viewform?usp=publish-editor",
+  // New Class 8 Links requested
+  gformBing8: "https://forms.gle/H8rbPMX1LC1KmU5w9",
+  gformSenbud8: "https://bit.ly/ASTS1-SENBUD8",
+  gformBi8: "https://forms.gle/iegbtFfBNtBKadhy8",
+  gformIpa8: "https://forms.gle/mEifpp1TEBAMLtRy6",
+  gformIps8: "https://forms.gle/T8NF1DnGytAPUcTk6"
+};
+
+const GRADE_7_PRACTICE_QUESTIONS = [
+  {
+    id: 1,
+    question: "Hasil dari 25 – 8 x 5 – 24 : (-3) adalah ….",
+    options: ["A. -7", "B. -5", "C. 6", "D. 7"],
+    discussion: "25 – 40 + 8 = – 7\nJawaban: A"
+  },
+  {
+    id: 2,
+    question: "Paman memiliki kebun jeruk dengan luas 1 hektar. Setiap 6 bulan, paman dapat memanen jeruk sebanyak 45 kuintal dan 1 pohon jeruk mampu menghasilkan sekitar 30 kg jeruk. Agar hasil panen selalu maksimal, paman memberi pupuk untuk setiap pohon sebanyak 200 gram setiap bulan. Banyak pupuk yang dibutuhkan paman selama 6 bulan adalah ….",
+    options: ["A. 30 kg", "B. 120 kg", "C. 180 kg", "D. 200 kg"],
+    discussion: "Total panen = 45 kuintal = 4500 kg\n1 pohon = 30 kg\nBanyak pohon = 4500 / 30 = 150 pohon\nPupuk per pohon (6 bulan) = 6 x 200 gram = 1200 gram = 1,2 kg\nTotal pupuk = 150 x 1,2 kg = 180 kg\nJawaban: C"
+  }
+];
+
+const TRYOUT_DATA = [
+  {
+    id: 1,
+    question: "Hasil dari 25 – 8 x 5 – 24 : (-3) adalah ….",
+    options: ["A. -7", "B. -5", "C. 6", "D. 7"],
+    discussion: "25 – 40 + 8 = – 7\nJawaban: A"
+  }
+];
+
+const Card = ({ children, className = "", onClick }) => (
+  <div 
+    onClick={onClick} 
+    className={`bg-white rounded-2xl shadow-sm border border-gray-100 p-4 ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow active:scale-[0.98]' : ''} ${className}`}
+  >
+    {children}
+  </div>
+);
+
+const Button = ({ children, onClick, variant = 'primary', className = "", disabled = false, type = 'button' }) => {
+  const baseStyle = "w-full py-3 px-4 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2";
+  const variants = {
+    primary: "bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 shadow-md hover:shadow-lg",
+    secondary: "bg-blue-50 text-blue-600 hover:bg-blue-100",
+    outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50",
+    danger: "bg-red-50 text-red-600 hover:bg-red-100",
+    success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md"
+  };
+  return (
+    <button 
+      type={type}
+      onClick={onClick} 
+      disabled={disabled}
+      className={`${baseStyle} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+    >
+      {children}
+    </button>
+  );
+};
+
+const ProgressBar = ({ value, max = 100, color = "bg-blue-600", label }) => {
+  const percentage = Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div className="w-full">
+      {label && <div className="flex justify-between text-sm font-medium text-gray-600 mb-1">
+        <span>{label}</span>
+        <span>{Math.round(percentage)}%</span>
+      </div>}
+      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+        <div 
+          className={`h-full ${color} rounded-full transition-all duration-1000 ease-out`} 
+          style={{ width: `${percentage}%` }}
+        ></div>
+      </div>
+    </div>
+  );
+};
+
+const CustomModal = ({ config, onClose }) => {
+  if (!config.isOpen) return null;
+  return (
+     <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl transition-all scale-100">
+           <h3 className="font-bold text-xl mb-2 text-gray-800">{config.title || 'Informasi'}</h3>
+           <p className="text-gray-600 mb-6 whitespace-pre-wrap leading-relaxed">{config.message}</p>
+           <div className="flex gap-3 justify-end">
+              {config.onCancel && (
+                <Button variant="secondary" onClick={() => { config.onCancel(); onClose(); }} className="!w-auto py-2 px-4 text-sm">
+                  {config.cancelText || 'Batal'}
+                </Button>
+              )}
+              <Button variant="primary" onClick={() => { if(config.onConfirm) config.onConfirm(); onClose(); }} className="!w-auto py-2 px-4 text-sm">
+                 {config.confirmText || 'OK'}
+              </Button>
+           </div>
+        </div>
+     </div>
+  );
+};
+
+const Header = ({ title, subtitle, onBack }) => (
+  <div className="bg-white px-4 py-4 sticky top-0 z-10 border-b border-gray-100 flex items-center gap-3">
+    {onBack && (
+      <button onClick={onBack} className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-600">
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+      </button>
+    )}
+    <div>
+      <h1 className="font-bold text-gray-900 leading-tight">{title}</h1>
+      {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+    </div>
+  </div>
+);
+
+const SplashScreen = ({ onFinish }) => {
+  useEffect(() => {
+    const timer = setTimeout(onFinish, 2500);
+    return () => clearTimeout(timer);
+  }, [onFinish]);
+
+  return (
+    <div className="min-h-screen bg-blue-600 flex flex-col items-center justify-center text-white p-6 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-500 to-blue-700 opacity-50"></div>
+      <div className="z-10 text-center">
+        <div className="text-6xl mb-4">🏠</div>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">{APP_CONFIG.appName}</h1>
+        <h2 className="text-xl font-semibold text-blue-100 mb-2">{APP_CONFIG.schoolName}</h2>
+        <p className="text-sm text-blue-200 mb-6">{APP_CONFIG.tagline}</p>
+        <div className="inline-block bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
+          Memuat Sistem Pembelajaran...
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const IdentityScreen = ({ onLogin, setView }) => {
+  const [name, setName] = useState('');
+  const [selectedClass, setSelectedClass] = useState('7A');
+  const [absensi, setAbsensi] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!name.trim() || !absensi.trim()) {
+      return setError('Nama lengkap dan nomor absen wajib diisi!');
+    }
+
+    let studentGradeNum = 7;
+    if (selectedClass.startsWith('8')) studentGradeNum = 8;
+    else if (selectedClass.startsWith('9')) studentGradeNum = 9;
+
+    const userData = {
+      name: name.trim(),
+      class: selectedClass,
+      gradeNum: studentGradeNum,
+      absensi: absensi.trim(),
+      points: 50,
+      badges: ['🌱 Smart Beginner'],
+      tkaScores: { literasi: 65, numerasi: 70 }
+    };
+
+    if (db) {
+      try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students_database'), {
+          ...userData,
+          createdAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("Error saving student identity:", err);
+      }
+    }
+
+    onLogin(userData);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8">
+        <div className="text-center mb-6">
+          <div className="text-5xl mb-3">🎓</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Identitas Siswa</h1>
+          <p className="text-indigo-600 font-bold text-sm">{APP_CONFIG.schoolName}</p>
+          <p className="text-gray-500 text-xs mt-1">Masukkan data diri untuk mulai belajar dan mencatat nilai otomatis.</p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 border border-red-100">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+            <input 
+              type="text" 
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              placeholder="Contoh: Budi Santoso"
+              value={name}
+              onChange={(e) => { setName(e.target.value); setError(''); }}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kelas</label>
+            <select 
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold"
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+            >
+              {APP_CONFIG.classes.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nomor Absen</label>
+            <input 
+              type="number" 
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              placeholder="Contoh: 12"
+              value={absensi}
+              onChange={(e) => { setAbsensi(e.target.value); setError(''); }}
+            />
+          </div>
+
+          <Button type="submit" variant="primary" className="mt-4 py-3.5 text-base">
+            🚀 Masuk ke Ruang Digital
+          </Button>
+        </form>
+
+        <div className="mt-6 pt-6 border-t border-gray-100 text-center">
+          <button 
+            onClick={() => setView('teacherLogin')}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-bold"
+          >
+            🔐 Login Ruang Guru / Spreadsheet Mapel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TeacherLoginScreen = ({ onTeacherLogin, setView, showModal }) => {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [nip, setNip] = useState('');
+  const [name, setName] = useState('');
+  const [subject, setSubject] = useState('Matematika');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [teachersDb, setTeachersDb] = useState(INITIAL_TEACHERS_DATABASE);
+
+  useEffect(() => {
+    if (!db) return;
+    const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teachers_registry'), (snap) => {
+      const remoteTeachers = snap.docs.map(doc => doc.data());
+      if (remoteTeachers.length > 0) {
+        setTeachersDb([...INITIAL_TEACHERS_DATABASE, ...remoteTeachers]);
+      }
+    }, (err) => console.error(err));
+    return () => unsub();
+  }, []);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const found = teachersDb.find(t => t.nip === nip && t.password === password);
+    if (!found) {
+      return setError('NIP atau Password Guru salah. Silakan periksa kembali.');
+    }
+    onTeacherLogin(found);
+    setView('admin');
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    if (!nip.trim() || !name.trim() || !password.trim()) {
+      return setError('Semua kolom wajib diisi untuk pendaftaran guru.');
+    }
+    const exists = teachersDb.find(t => t.nip === nip);
+    if (exists) {
+      return setError('NIP tersebut sudah terdaftar. Silakan langsung login.');
+    }
+
+    const newTeacher = { nip, name, subject, password };
+    if (db) {
+      try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teachers_registry'), newTeacher);
+      } catch (err) {
+        console.error("Error saving teacher:", err);
+      }
+    }
+
+    showModal({
+      title: 'Akun Guru Berhasil Dibuat!',
+      message: `Akun untuk ${name} (${subject}) telah berhasil didaftarkan. Silakan login dengan NIP dan password Anda.`,
+      onConfirm: () => {
+        setIsRegistering(false);
+        setPassword('');
+      }
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 relative">
+        <div className="absolute top-4 left-4">
+          <button 
+            onClick={() => setView('login')} 
+            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-xl font-semibold transition-all flex items-center gap-1"
+          >
+            ← Kembali
+          </button>
+        </div>
+
+        <div className="text-center mb-6 mt-4">
+          <div className="text-5xl mb-3">🔐</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">{isRegistering ? 'Buat Akun Guru Baru' : 'Portal Login Guru'}</h1>
+          <p className="text-indigo-600 font-bold text-xs">{APP_CONFIG.schoolName}</p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-5 flex items-center gap-2 border border-red-100">
+            <span>{error}</span>
+          </div>
+        )}
+
+        {!isRegistering ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">NIP Guru</label>
+              <input 
+                type="text" 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                placeholder="Contoh: 198001012005011001"
+                value={nip}
+                onChange={(e) => { setNip(e.target.value); setError(''); }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input 
+                type="password" 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+              />
+            </div>
+            <Button type="submit" variant="success" className="mt-4 text-base py-3 bg-indigo-600 hover:bg-indigo-700">
+              🔑 Masuk Ruang Guru
+            </Button>
+            <div className="text-center pt-2">
+              <button 
+                type="button" 
+                onClick={() => { setIsRegistering(true); setError(''); }}
+                className="text-xs text-indigo-600 font-bold hover:underline"
+              >
+                Belum punya akun? Buat Akun Guru Baru
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap & Gelar</label>
+              <input 
+                type="text" 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                placeholder="Contoh: Budi Santoso, S.Pd"
+                value={name}
+                onChange={(e) => { setName(e.target.value); setError(''); }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">NIP Guru</label>
+              <input 
+                type="text" 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                placeholder="Nomor Induk Pegawai"
+                value={nip}
+                onChange={(e) => { setNip(e.target.value); setError(''); }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mata Pelajaran yang Diampu</label>
+              <select 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              >
+                {SUBJECTS.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Buat Password</label>
+              <input 
+                type="password" 
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+              />
+            </div>
+            <Button type="submit" variant="primary" className="mt-4 text-base py-3 bg-indigo-600 hover:bg-indigo-700">
+              ✨ Daftar Akun Guru
+            </Button>
+            <div className="text-center pt-2">
+              <button 
+                type="button" 
+                onClick={() => { setIsRegistering(false); setError(''); }}
+                className="text-xs text-gray-600 font-bold hover:underline"
+              >
+                Sudah punya akun? Login di sini
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const Dashboard = ({ user, setView, setSelectedGradeView, showModal }) => {
+  const currentLevel = LEVELS.find(l => user.points >= l.min && user.points <= l.max) || LEVELS[0];
+  const nextLevel = LEVELS[LEVELS.indexOf(currentLevel) + 1];
+  const progressToNext = nextLevel ? ((user.points - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100 : 100;
+
+  const handleGradeAccess = (targetGrade) => {
+    if (user.gradeNum === 7 && targetGrade !== 7) {
+      showModal({
+        title: 'Akses Dibatasi!',
+        message: 'Akun Anda terdaftar di Kelas 7. Sesuai ketentuan, akses materi Kelas 8 dan Kelas 9 dikunci untuk akun Anda.'
+      });
+      return;
+    }
+    if (user.gradeNum === 8 && targetGrade !== 8) {
+      showModal({
+        title: 'Akses Dibatasi!',
+        message: 'Akun Anda terdaftar di Kelas 8. Sesuai ketentuan, akses materi Kelas 7 dan Kelas 9 dikunci untuk akun Anda.'
+      });
+      return;
+    }
+    if (user.gradeNum === 9 && targetGrade !== 9) {
+      showModal({
+        title: 'Akses Dibatasi!',
+        message: 'Akun Anda terdaftar di Kelas 9. Sesuai ketentuan, akses materi Kelas 7 dan Kelas 8 dikunci untuk akun Anda.'
+      });
+      return;
+    }
+
+    setSelectedGradeView(targetGrade);
+    setView('mapel');
+  };
+
+  const quickMenus = [
+    { icon: "📘", label: "Materi Kls 7", onClick: () => handleGradeAccess(7), color: "bg-blue-100 text-blue-600" },
+    { icon: "📗", label: "Materi Kls 8", onClick: () => handleGradeAccess(8), color: "bg-emerald-100 text-emerald-600" },
+    { icon: "📙", label: "Materi Kls 9", onClick: () => handleGradeAccess(9), color: "bg-orange-100 text-orange-600" },
+    { icon: "📖", label: "Literasi", view: "litnum", color: "bg-purple-100 text-purple-600" },
+    { icon: "🔢", label: "Numerasi", view: "litnum", color: "bg-red-100 text-red-600" },
+    { icon: "🎮", label: "Game", view: "game", color: "bg-yellow-100 text-yellow-600" },
+    { icon: "📝", label: "Latihan", view: "latihan", color: "bg-teal-100 text-teal-600" },
+    { icon: "🎯", label: "Siap TKA", view: "tka", color: "bg-indigo-100 text-indigo-600" },
+  ];
+
+  return (
+    <div className="pb-24 max-w-md mx-auto w-full min-h-screen bg-gray-50">
+      <div className="bg-blue-600 rounded-b-3xl p-6 text-white shadow-md relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
+        <div className="flex justify-between items-start relative z-10">
+          <div>
+            <h2 className="text-blue-100 text-sm font-medium mb-1">{APP_CONFIG.schoolName}</h2>
+            <h1 className="text-2xl font-bold truncate pr-4">{user.name} 👋</h1>
+            <p className="text-blue-200 text-sm mt-1">Kelas {user.class} • Absen {user.absensi}</p>
+          </div>
+          <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-center min-w-[80px]">
+            <div className="text-2xl">⭐</div>
+            <div className="font-bold">{user.points}</div>
+            <div className="text-[10px] uppercase tracking-wider opacity-80">Poin</div>
+          </div>
+        </div>
+        
+        <div className="mt-6 bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/20">
+          <div className="flex justify-between text-sm mb-2 font-medium">
+            <span>{currentLevel.name}</span>
+            {nextLevel && <span>Menuju {nextLevel.name}</span>}
+          </div>
+          <ProgressBar value={progressToNext} max={100} color="bg-yellow-400" />
+        </div>
+      </div>
+
+      <div className="px-5 -mt-4 relative z-20">
+        <Card className="shadow-lg border-0 bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-lg mb-1">🚀 Siap belajar hari ini?</h3>
+            <p className="text-blue-100 text-sm">{APP_CONFIG.tagline}</p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="p-5">
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <span className="text-xl">🧭</span> Eksplorasi (Status: Kelas {user.class})
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+          {quickMenus.map((menu, idx) => (
+            <button 
+              key={idx}
+              onClick={() => { 
+                if (menu.onClick) menu.onClick();
+                else if (menu.view) setView(menu.view);
+              }}
+              className="flex flex-col items-center gap-2 p-3 bg-white rounded-2xl shadow-sm border border-gray-100 transition-all hover:shadow-md active:scale-95"
+            >
+              <div className={`relative w-14 h-14 rounded-2xl ${menu.color} flex items-center justify-center text-2xl mb-1`}>
+                {menu.icon}
+              </div>
+              <span className="text-xs font-semibold text-center text-gray-700 leading-tight">
+                {menu.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-5">
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <span className="text-xl">📊</span> Progress TKA
+        </h3>
+        <Card className="space-y-4">
+          <ProgressBar label="Kemampuan Literasi" value={user.tkaScores.literasi} color="bg-purple-500" />
+          <ProgressBar label="Kemampuan Numerasi" value={user.tkaScores.numerasi} color="bg-red-500" />
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+const MapelList = ({ setView, setSelectedMapel, gradeView }) => (
+  <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+    <Header title={`Ruang Belajar (Kelas ${gradeView})`} subtitle={APP_CONFIG.schoolName} onBack={() => setView('dashboard')} />
+    <div className="p-4 grid grid-cols-2 gap-4">
+      {SUBJECTS.map(subject => (
+        <Card 
+          key={subject.id} 
+          onClick={() => { setSelectedMapel(subject); setView('mapelDetail'); }}
+          className={`flex flex-col items-center justify-center p-6 text-center border-2 border-transparent hover:${subject.border} transition-colors`}
+        >
+          <div className={`w-16 h-16 rounded-2xl ${subject.color} flex items-center justify-center text-3xl mb-3`}>
+            {subject.icon}
+          </div>
+          <h3 className="font-bold text-gray-800 text-sm leading-tight">{subject.name}</h3>
+        </Card>
+      ))}
+    </div>
+  </div>
+);
+
+const SubjectDetail = ({ mapel, setView, gradeView, user, showModal }) => {
+  const [submitting, setSubmitting] = useState(false);
+  const [activeSubView, setActiveSubView] = useState('menu');
+
+  const handlePracticeComplete = async (activityName) => {
+    setSubmitting(true);
+    if (db && user) {
+      try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'practice_scores'), {
+          studentName: user.name,
+          studentClass: user.class,
+          absensi: user.absensi,
+          subject: mapel.name,
+          grade: gradeView,
+          activity: activityName,
+          score: 100,
+          timestamp: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("Error saving practice score:", err);
+      }
+    }
+    setSubmitting(false);
+    showModal({
+      title: 'Tersimpan di Spreadsheet Guru!',
+      message: `Aktivitas "${activityName}" (${mapel.name} Kls ${gradeView}) telah berhasil diselesaikan dan nilai otomatis tercatat di database spreadsheet guru.`
+    });
+  };
+
+  // Google Form Viewer for Class 9 Seni Budaya / Prakarya
+  if (activeSubView === 'gform_senibudaya_9' && gradeView === 9 && mapel.id === 'seni') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal Seni Budaya Kls 9" subtitle="Google Form Resmi" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-pink-50 border border-pink-200 p-3 rounded-xl text-xs text-pink-800">
+            Silakan isi Google Form Latihan Soal di bawah ini dengan lengkap. Setelah selesai, klik tombol konfirmasi.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe 
+              src={APP_LINKS.gformSeniBudaya9} 
+              title="Google Form Seni Budaya Kelas 9"
+              className="w-full h-full min-h-[450px]"
+              frameBorder="0"
+            >
+              Memuat...
+            </iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Google Form Latihan Soal Seni Budaya Kls 9")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Telah Mengisi GForm
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Google Form Viewer for Class 7 KKA
+  if (activeSubView === 'gform_kka_7' && gradeView === 7) {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Materi KKA Kelas 7" subtitle="Google Form Resmi KKA" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-800">
+            Silakan pelajari dan kerjakan materi / soal KKA Kelas 7 pada tautan Google Form berikut.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe 
+              src={APP_LINKS.gformKka7} 
+              title="Google Form KKA Kelas 7"
+              className="w-full h-full min-h-[450px]"
+              frameBorder="0"
+            >
+              Memuat...
+            </iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Materi & Latihan KKA Kelas 7")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan KKA
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- CLASS 8 EMBEDDED GOOGLE FORMS ---
+  if (activeSubView === 'gform_bing_8' && gradeView === 8 && mapel.id === 'bing') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal ASTS Semester 1" subtitle="Bahasa Inggris Kelas 8" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-purple-50 border border-purple-200 p-3 rounded-xl text-xs text-purple-800">
+            Kerjakan latihan soal ASTS Semester 1 Bahasa Inggris Kelas 8 di bawah ini.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe src="https://forms.gle/H8rbPMX1LC1KmU5w9" title="Bahasa Inggris Kelas 8" className="w-full h-full min-h-[450px]" frameBorder="0">Memuat...</iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Latihan Soal ASTS Bahasa Inggris Kelas 8")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSubView === 'gform_senbud_8' && gradeView === 8 && mapel.id === 'seni') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal ASTS Semester 1" subtitle="Seni Budaya Kelas 8" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-pink-50 border border-pink-200 p-3 rounded-xl text-xs text-pink-800">
+            Kerjakan latihan soal ASTS Semester 1 Seni Budaya Kelas 8 melalui tautan berikut.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe src="https://bit.ly/ASTS1-SENBUD8" title="Seni Budaya Kelas 8" className="w-full h-full min-h-[450px]" frameBorder="0">Memuat...</iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Latihan Soal ASTS Seni Budaya Kelas 8")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSubView === 'gform_bi_8' && gradeView === 8 && mapel.id === 'bi') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal ASTS Semester 1" subtitle="Bahasa Indonesia Kelas 8" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs text-blue-800">
+            Kerjakan latihan soal ASTS 1 Bahasa Indonesia Kelas 8.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe src="https://forms.gle/iegbtFfBNtBKadhy8" title="Bahasa Indonesia Kelas 8" className="w-full h-full min-h-[450px]" frameBorder="0">Memuat...</iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Latihan Soal ASTS Bahasa Indonesia Kelas 8")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSubView === 'gform_ipa_8' && gradeView === 8 && mapel.id === 'ipa') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal ASTS Semester 1" subtitle="IPA Kelas 8" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-green-50 border border-green-200 p-3 rounded-xl text-xs text-green-800">
+            Kerjakan latihan soal ASTS 1 IPA Kelas 8 di bawah ini.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe src="https://forms.gle/mEifpp1TEBAMLtRy6" title="IPA Kelas 8" className="w-full h-full min-h-[450px]" frameBorder="0">Memuat...</iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Latihan Soal ASTS IPA Kelas 8")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSubView === 'gform_ips_8' && gradeView === 8 && mapel.id === 'ips') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full flex flex-col">
+        <Header title="Latihan Soal ASTS Semester 1" subtitle="IPS Kelas 8" onBack={() => setActiveSubView('menu')} />
+        <div className="flex-1 flex flex-col p-4 space-y-4">
+          <div className="bg-orange-50 border border-orange-200 p-3 rounded-xl text-xs text-orange-800">
+            Kerjakan latihan soal ASTS Semester 1 IPS Kelas 8.
+          </div>
+          <div className="flex-1 bg-gray-100 rounded-xl overflow-hidden min-h-[400px] border border-gray-200">
+            <iframe src="https://forms.gle/T8NF1DnGytAPUcTk6" title="IPS Kelas 8" className="w-full h-full min-h-[450px]" frameBorder="0">Memuat...</iframe>
+          </div>
+          <Button onClick={() => handlePracticeComplete("Latihan Soal ASTS IPS Kelas 8")} variant="success" className="py-3.5">
+            ✅ Konfirmasi Selesai Mengerjakan
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Tampilan Khusus Video Pembelajaran Kelas 9 Seni Budaya / Prakarya
+  if (activeSubView === 'video_pembelajaran' && gradeView === 9 && mapel.id === 'seni') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full">
+        <Header title="Video Pembelajaran Seni Budaya / Prakarya" subtitle="Kelas 9 - Pengolahan Bahan Pangan Umbi" onBack={() => setActiveSubView('menu')} />
+        <div className="p-5 space-y-6">
+          <div className="bg-pink-50 border border-pink-200 p-4 rounded-2xl">
+            <h3 className="font-bold text-pink-900 text-sm mb-1">🎥 Video Pembelajaran Kelas 9</h3>
+            <p className="text-xs text-pink-700">Simak penjelasan guru mengenai pengolahan bahan pangan umbi dan kelompok tugas praktik berikut.</p>
+          </div>
+
+          <div className="rounded-2xl overflow-hidden shadow-lg bg-black">
+            <video 
+              controls 
+              className="w-full h-auto max-h-[350px] object-contain"
+              src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
+
+          <Card className="space-y-2 border border-gray-200 bg-gray-50">
+            <h4 className="font-bold text-gray-900 text-sm">📋 Catatan Materi Video:</h4>
+            <ul className="text-xs text-gray-700 space-y-1 list-disc pl-4">
+              <li>Pembagian kelompok olahan pangan dari umbi (Ubi Jalar, Kentang, Singkong, dll).</li>
+              <li>Penyusunan perencanaan tugas kelompok dilengkapi gambar dari internet.</li>
+              <li>Pengumpulan hasil tugas melalui WhatsApp guru pengampu untuk koreksi sebelum dicetak.</li>
+            </ul>
+          </Card>
+
+          <Button onClick={() => handlePracticeComplete("Menonton Video Pembelajaran Seni Budaya/Prakarya Kelas 9")} variant="success" className="py-3.5">
+            📤 Laporkan Selesai Menonton ke Database Guru
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSubView === 'soal_latihan' && gradeView === 7 && mapel.id === 'mtk') {
+    return (
+      <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full">
+        <Header title="Soal Latihan Kelas 7" subtitle="ASTS Semester 1 - Bilangan Bulat & FPB/KPK" onBack={() => setActiveSubView('menu')} />
+        <div className="p-5 space-y-6">
+          <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl">
+            <h3 className="font-bold text-blue-900 text-sm mb-1">📝 Soal Latihan Resmi SMPN 1 Semarang</h3>
+            <p className="text-xs text-blue-700">Silakan pelajari soal-soal di bawah ini. Selesaikan di buku catatan Anda atau pilih soal untuk melihat kunci dan pembahasannya.</p>
+          </div>
+
+          <div className="space-y-4">
+            {GRADE_7_PRACTICE_QUESTIONS.map((item) => (
+              <Card key={item.id} className="space-y-3 border border-gray-200">
+                <div className="flex gap-2">
+                  <span className="font-bold text-blue-600">Soal {item.id}</span>
+                </div>
+                <p className="text-xs text-gray-800 whitespace-pre-wrap leading-relaxed">{item.question}</p>
+                {item.options && (
+                  <div className="space-y-1 pt-1">
+                    {item.options.map((opt, i) => (
+                      <div key={i} className="text-xs bg-gray-50 p-2 rounded-lg text-gray-700 font-medium">
+                        {opt}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl mt-2">
+                  <h4 className="font-bold text-emerald-900 text-xs mb-1">💡 Kunci & Pembahasan:</h4>
+                  <p className="text-xs text-emerald-800 whitespace-pre-wrap leading-relaxed">{item.discussion}</p>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          <Button onClick={() => handlePracticeComplete("Soal Latihan Kelas 7 Matematika")} variant="success" className="py-3.5">
+            📤 Kirim Bukti Pengerjaan ke Database Guru
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const actions = [
+    { label: "Materi Pembelajaran", icon: "📚", color: "bg-blue-50 text-blue-600", desc: "Ringkasan & Modul Guru" },
+    ...(gradeView === 9 && mapel.id === 'seni' ? [
+      { label: "Video Pembelajaran", icon: "🎥", color: "bg-red-50 text-red-600", desc: "Penjelasan Visual Praktek Seni Budaya", action: () => setActiveSubView('video_pembelajaran') },
+      { label: "Google Form Latihan Soal Seni Budaya", icon: "📋", color: "bg-pink-50 text-pink-600", desc: "Isi GForm Latihan Soal", action: () => setActiveSubView('gform_senibudaya_9') }
+    ] : [
+      { label: "Video Pembelajaran", icon: "🎥", color: "bg-red-50 text-red-600", desc: "Penjelasan Visual" }
+    ]),
+    ...(gradeView === 7 && mapel.id === 'mtk' ? [
+      { label: "Soal Latihan ASTS Kelas 7 (PDF)", icon: "📋", color: "bg-teal-50 text-teal-600", desc: "Bilangan Bulat, KPK, FPB & Aritmatika", action: () => setActiveSubView('soal_latihan') }
+    ] : []),
+    ...(gradeView === 7 ? [
+      { label: "Materi & Latihan KKA Kelas 7", icon: "🎯", color: "bg-indigo-50 text-indigo-600", desc: "Google Form KKA Kelas 7", action: () => setActiveSubView('gform_kka_7') }
+    ] : []),
+    // --- CLASS 8 SPECIFIC LINKS MAPPING ---
+    ...(gradeView === 8 && mapel.id === 'bing' ? [
+      { label: "Latihan Soal ASTS Semester 1 (Bahasa Inggris)", icon: "💬", color: "bg-purple-50 text-purple-600", desc: "Google Form ASTS Bahasa Inggris Kelas 8", action: () => setActiveSubView('gform_bing_8') }
+    ] : []),
+    ...(gradeView === 8 && mapel.id === 'seni' ? [
+      { label: "Latihan Soal ASTS Semester 1 (Seni Budaya)", icon: "🎨", color: "bg-pink-50 text-pink-600", desc: "Google Form ASTS Seni Budaya Kelas 8", action: () => setActiveSubView('gform_senbud_8') }
+    ] : []),
+    ...(gradeView === 8 && mapel.id === 'bi' ? [
+      { label: "Latihan Soal ASTS Semester 1 (Bahasa Indonesia)", icon: "📖", color: "bg-blue-50 text-blue-600", desc: "Google Form ASTS Bahasa Indonesia Kelas 8", action: () => setActiveSubView('gform_bi_8') }
+    ] : []),
+    ...(gradeView === 8 && mapel.id === 'ipa' ? [
+      { label: "Latihan Soal ASTS Semester 1 (IPA)", icon: "🔬", color: "bg-green-50 text-green-600", desc: "Google Form ASTS IPA Kelas 8", action: () => setActiveSubView('gform_ipa_8') }
+    ] : []),
+    ...(gradeView === 8 && mapel.id === 'ips' ? [
+      { label: "Latihan Soal ASTS Semester 1 (IPS)", icon: "🌍", color: "bg-orange-50 text-orange-600", desc: "Google Form ASTS IPS Kelas 8", action: () => setActiveSubView('gform_ips_8') }
+    ] : []),
+    { label: "Latihan Soal & Kuis", icon: "📝", color: "bg-green-50 text-green-600", desc: "Simpan Nilai ke Spreadsheet", action: () => handlePracticeComplete("Latihan Soal Kuis") },
+    { label: "Integrasi LitNum", icon: "🧠", color: "bg-purple-50 text-purple-600", desc: "Penguatan Literasi Numerasi", action: () => handlePracticeComplete("LitNum Integration") },
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+      <Header title={mapel.name} subtitle={`Kelas ${gradeView} - Pusat Pembelajaran`} onBack={() => setView('mapel')} />
+      <div className="p-5">
+        <div className={`rounded-3xl p-6 ${mapel.color} flex items-center gap-4 mb-6 shadow-sm`}>
+          <div className="text-5xl bg-white p-3 rounded-2xl shadow-sm">{mapel.icon}</div>
+          <div>
+            <h2 className="text-xl font-bold mb-1">Mulai Belajar</h2>
+            <p className="text-sm opacity-80">Pilih aktivitas di bawah ini.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+          {actions.map((action, idx) => (
+            <Card key={idx} onClick={action.action ? action.action : () => showModal({ title: action.label, message: `Membuka modul ${action.label} untuk ${mapel.name}.` })} className="flex items-center gap-4 p-4 border border-gray-100 hover:border-gray-300">
+               <div className={`w-12 h-12 rounded-xl ${action.color} flex items-center justify-center text-xl`}>
+                 {action.icon}
+               </div>
+               <div className="flex-1">
+                 <h3 className="font-bold text-gray-800">{action.label}</h3>
+                 <p className="text-xs text-gray-500">{action.desc}</p>
+               </div>
+               <div className="text-gray-300">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+               </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LatihanRoom = ({ setView }) => (
+  <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+    <Header title="Ruang Latihan" subtitle={APP_CONFIG.schoolName} onBack={() => setView('dashboard')} />
+    <div className="p-5 space-y-4">
+      <Card onClick={() => window.open(APP_LINKS.detektifSiber, '_blank')} className="flex items-center gap-4 p-4 border border-blue-100 hover:border-blue-300 bg-blue-50 cursor-pointer shadow-sm">
+         <div className="w-14 h-14 rounded-xl bg-blue-200 flex items-center justify-center text-3xl">🕵️‍♀️</div>
+         <div className="flex-1">
+           <h3 className="font-bold text-blue-900">Detektif Siber</h3>
+           <p className="text-xs text-blue-700 mt-1">Latihan Pemecahan Masalah & Literasi Digital</p>
+         </div>
+         <div className="text-blue-500">
+           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+         </div>
+      </Card>
+    </div>
+  </div>
+);
+
+const GameRoom = ({ setView, user, setUser, showModal }) => {
+  const [playing, setPlaying] = useState(false);
+  const [qIndex, setQIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [feedback, setFeedback] = useState(null);
+
+  const questions = [
+    { q: "Mana yang merupakan ciri teks deskripsi?", options: ["Menggambarkan objek secara rinci", "Menceritakan masa lalu", "Berisi argumen debat"], ans: 0 },
+    { q: "Jika harga buku Rp10.000 diskon 20%, berapa harganya?", options: ["Rp2.000", "Rp8.000", "Rp12.000"], ans: 1 },
+    { q: "Organ pencernaan utama penyerap sari makanan adalah...", options: ["Lambung", "Usus Halus", "Usus Besar"], ans: 1 }
+  ];
+
+  const handleAnswer = async (idx) => {
+    const isCorrect = idx === questions[qIndex].ans;
+    if (isCorrect) {
+      setScore(s => s + 10);
+      setFeedback({ type: 'success', msg: 'Benar! +10 Poin' });
+    } else {
+      setFeedback({ type: 'error', msg: 'Belum tepat. Tetap semangat belajar!' });
+    }
+
+    setTimeout(async () => {
+      setFeedback(null);
+      if (qIndex < questions.length - 1) {
+        setQIndex(qIndex + 1);
+      } else {
+        const totalEarned = score + (isCorrect ? 10 : 0) + 20;
+        const updatedPoints = user.points + totalEarned;
+        setUser({
+          ...user,
+          points: updatedPoints,
+          tkaScores: { ...user.tkaScores, literasi: Math.min(100, user.tkaScores.literasi + 10) }
+        });
+
+        if (db) {
+          try {
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'game_scores'), {
+              studentName: user.name,
+              studentClass: user.class,
+              absensi: user.absensi,
+              score: totalEarned,
+              timestamp: new Date().toISOString()
+            });
+          } catch (e) {
+            console.error("Save error:", e);
+          }
+        }
+
+        showModal({
+          title: 'Permainan Selesai!',
+          message: `Kamu mendapatkan ${totalEarned} Poin!\nNilai telah tercatat otomatis di database spreadsheet guru.`,
+          onConfirm: () => {
+            setPlaying(false);
+            setQIndex(0);
+            setScore(0);
+          }
+        });
+      }
+    }, 1200);
+  };
+
+  if (!playing) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+        <Header title="Ruang Bermain" subtitle={APP_CONFIG.schoolName} onBack={() => setView('dashboard')} />
+        <div className="p-5 space-y-4">
+          <Card className="bg-gradient-to-br from-yellow-400 to-orange-500 text-white border-0 shadow-lg text-center p-8">
+            <div className="text-6xl mb-4 animate-bounce">🎮</div>
+            <h2 className="text-2xl font-bold mb-2">Quiz Challenge</h2>
+            <p className="text-yellow-100 text-sm mb-6">Uji kecepatan & ketepatanmu. Poin & nilai langsung tersimpan ke database spreadsheet guru!</p>
+            <Button onClick={() => setPlaying(true)} variant="primary" className="bg-white !text-orange-600 hover:bg-gray-50 shadow-md">
+              MULAI BERMAIN
+            </Button>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  const q = questions[qIndex];
+  return (
+    <div className="min-h-screen bg-gray-900 pb-24 max-w-md mx-auto w-full text-white flex flex-col">
+      <div className="p-4 flex justify-between items-center bg-gray-800">
+        <span className="font-bold text-gray-400">Pertanyaan {qIndex + 1}/{questions.length}</span>
+        <span className="bg-yellow-500 text-yellow-900 px-3 py-1 rounded-full font-bold text-sm">Skor: {score}</span>
+      </div>
+      
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-xl font-bold mb-8 leading-relaxed">{q.q}</h2>
+        <div className="w-full space-y-3">
+          {q.options.map((opt, idx) => (
+            <button 
+              key={idx}
+              disabled={feedback !== null}
+              onClick={() => handleAnswer(idx)}
+              className="w-full p-4 bg-gray-800 border-2 border-gray-700 rounded-xl text-left font-medium text-base hover:border-blue-500 hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+
+        {feedback && (
+          <div className={`mt-8 p-4 rounded-xl w-full font-bold animate-pulse ${feedback.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+            {feedback.msg}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const TKARoom = ({ setView }) => (
+  <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+    <Header title="Pusat Siap TKA" subtitle={APP_CONFIG.schoolName} onBack={() => setView('dashboard')} />
+    <div className="p-5 space-y-4">
+      <Card onClick={() => setView('tkaTryout')} className="flex items-center gap-4 p-5 border border-indigo-100 bg-indigo-50 hover:border-indigo-300">
+        <div className="w-14 h-14 rounded-2xl bg-indigo-200 text-indigo-700 flex items-center justify-center text-3xl">📝</div>
+        <div className="flex-1">
+          <h3 className="font-bold text-indigo-900 text-base">Mulai Tryout TKA</h3>
+          <p className="text-xs text-indigo-700 mt-1">Kerjakan soal & nilai otomatis tersimpan di Database Spreadsheet Guru.</p>
+        </div>
+        <div className="text-indigo-500">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+        </div>
+      </Card>
+
+      <Card onClick={() => setView('tkaPembahasan')} className="flex items-center gap-4 p-5 border border-emerald-100 bg-emerald-50 hover:border-emerald-300">
+        <div className="w-14 h-14 rounded-2xl bg-emerald-200 text-emerald-700 flex items-center justify-center text-3xl">💡</div>
+        <div className="flex-1">
+          <h3 className="font-bold text-emerald-900 text-base">Pembahasan Soal TKA</h3>
+          <p className="text-xs text-emerald-700 mt-1">Kunci jawaban dan langkah penyelesaian lengkap.</p>
+        </div>
+        <div className="text-emerald-500">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+        </div>
+      </Card>
+    </div>
+  </div>
+);
+
+const TKATryoutViewer = ({ setView, user, showModal }) => {
+  const [answers, setAnswers] = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const [scoreResult, setScoreResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleOptionSelect = (qId, optionIdx) => {
+    if (submitted) return;
+    setAnswers({ ...answers, [qId]: optionIdx });
+  };
+
+  const handleSubmitTryout = async () => {
+    let score = 0;
+    const correctMap = { 1: 0 };
+    
+    TRYOUT_DATA.forEach((item) => {
+      if (answers[item.id] === correctMap[item.id]) {
+        score += 100;
+      }
+    });
+
+    setScoreResult(score);
+    setSubmitted(true);
+
+    if (db && user) {
+      setSaving(true);
+      try {
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'tka_results'), {
+          studentName: user.name,
+          studentClass: user.class,
+          absensi: user.absensi,
+          score: score,
+          timestamp: new Date().toISOString()
+        });
+        showModal({
+          title: 'Tersimpan ke Spreadsheet Guru!',
+          message: `Nilai Tryout TKA kamu (${score}/100) berhasil dikirim & tersimpan di database guru.`
+        });
+      } catch (err) {
+        console.error("Error saving:", err);
+      } finally {
+        setSaving(false);
+      }
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-white pb-24 max-w-md mx-auto w-full">
+      <Header title="Ujian Tryout TKA" subtitle="Matematika & Literasi" onBack={() => setView('tka')} />
+      <div className="p-5 space-y-6">
+        {submitted && (
+          <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl text-center">
+            <h3 className="text-lg font-bold text-blue-900 mb-1">Hasil Tryout Kamu</h3>
+            <div className="text-4xl font-black text-blue-600 my-2">{scoreResult} <span className="text-sm font-normal text-gray-500">/ 100</span></div>
+            <p className="text-xs text-blue-700">Skor telah tercatat otomatis di database spreadsheet guru.</p>
+          </div>
+        )}
+
+        {TRYOUT_DATA.map((item) => (
+          <div key={item.id} className="border-b border-gray-100 pb-5 last:border-0">
+            <div className="flex gap-3">
+              <span className="font-bold text-gray-800">{item.id}.</span>
+              <div className="flex-1">
+                <p className="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed mb-4">{item.question}</p>
+                {item.options && item.options.length > 0 && (
+                  <div className="space-y-2">
+                    {item.options.map((opt, i) => {
+                      const isSelected = answers[item.id] === i;
+                      return (
+                        <button
+                          key={i}
+                          disabled={submitted}
+                          onClick={() => handleOptionSelect(item.id, i)}
+                          className={`w-full text-left text-sm p-3 rounded-xl border transition-all ${isSelected ? 'bg-blue-50 border-blue-500 font-semibold text-blue-900' : 'bg-gray-50 border-gray-100 text-gray-700 hover:bg-gray-100'}`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {!submitted ? (
+          <Button onClick={handleSubmitTryout} variant="success" className="py-4">
+            📤 Selesaikan & Kirim Nilai ke Database Guru
+          </Button>
+        ) : (
+          <Button onClick={() => setView('tka')} variant="primary">
+            Kembali ke Menu TKA
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const TKAPembahasanViewer = ({ setView }) => (
+  <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+    <Header title="Pembahasan Soal TKA" subtitle="Kunci & Langkah Penyelesaian" onBack={() => setView('tka')} />
+    <div className="p-5 space-y-6">
+      {TRYOUT_DATA.map((item) => (
+        <Card key={item.id} className="space-y-3">
+          <div className="flex gap-2">
+            <span className="font-bold text-indigo-600">Soal {item.id}</span>
+          </div>
+          <p className="text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">{item.question}</p>
+          <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+            <h4 className="font-bold text-emerald-900 text-xs mb-1">💡 Pembahasan & Kunci Jawaban:</h4>
+            <p className="text-xs text-emerald-800 whitespace-pre-wrap leading-relaxed">{item.discussion}</p>
+          </div>
+        </Card>
+      ))}
+    </div>
+  </div>
+);
+
+const AdminSpreadsheetView = ({ teacher, setView }) => {
+  const [activeTab, setActiveTab] = useState('practice');
+  const [selectedClassFilter, setSelectedClassFilter] = useState('ALL');
+  const [tkaData, setTkaData] = useState([]);
+  const [practiceData, setPracticeData] = useState([]);
+  const [gameData, setGameData] = useState([]);
+  const [studentData, setStudentData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!db) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubTka = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'tka_results'), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTkaData(list);
+    }, (err) => console.error(err));
+
+    const unsubPractice = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'practice_scores'), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPracticeData(list);
+    }, (err) => console.error(err));
+
+    const unsubGame = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'game_scores'), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setGameData(list);
+    }, (err) => console.error(err));
+
+    const unsubStudents = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students_database'), (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStudentData(list);
+      setLoading(false);
+    }, (err) => {
+      console.error(err);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubTka();
+      unsubPractice();
+      unsubGame();
+      unsubStudents();
+    };
+  }, []);
+
+  const filteredPractice = practiceData.filter(item => {
+    const matchSubject = teacher ? item.subject === teacher.subject : true;
+    const matchClass = selectedClassFilter === 'ALL' ? true : item.studentClass === selectedClassFilter;
+    return matchSubject && matchClass;
+  });
+
+  const filteredStudents = studentData.filter(item => {
+    const matchClass = selectedClassFilter === 'ALL' ? true : item.class === selectedClassFilter;
+    return matchClass;
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-4xl mx-auto w-full">
+      <Header 
+        title={teacher ? `Database Mapel: ${teacher.subject}` : "Spreadsheet & Database Guru"} 
+        subtitle={teacher ? `Pengajar: ${teacher.name} (NIP. ${teacher.nip})` : APP_CONFIG.schoolName} 
+        onBack={() => setView('login')} 
+      />
+      <div className="p-4 sm:p-6 space-y-6">
+        {teacher && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+              <h3 className="font-bold text-indigo-900 text-sm">Akses Terbatas Guru Mapel</h3>
+              <p className="text-xs text-indigo-700 mt-0.5">Anda hanya dapat melihat data nilai siswa untuk mata pelajaran <b>{teacher.subject}</b>.</p>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs font-bold text-indigo-900 whitespace-nowrap">Filter Kelas:</span>
+              <select 
+                value={selectedClassFilter} 
+                onChange={(e) => setSelectedClassFilter(e.target.value)}
+                className="bg-white border border-indigo-300 text-indigo-900 text-xs rounded-xl p-2 font-bold outline-none"
+              >
+                <option value="ALL">Semua Kelas</option>
+                {APP_CONFIG.classes.map(c => <option key={c} value={c}>Kelas {c}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="flex overflow-x-auto gap-2 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+          <button 
+            onClick={() => setActiveTab('practice')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${activeTab === 'practice' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            📝 Nilai Latihan ({filteredPractice.length})
+          </button>
+          <button 
+            onClick={() => setActiveTab('students')}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${activeTab === 'students' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            👥 Data Siswa {selectedClassFilter !== 'ALL' ? `(Kelas ${selectedClassFilter})` : `(${filteredStudents.length})`}
+          </button>
+          {!teacher && (
+            <>
+              <button 
+                onClick={() => setActiveTab('tka')}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${activeTab === 'tka' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                🎯 Tryout TKA ({tkaData.length})
+              </button>
+              <button 
+                onClick={() => setActiveTab('game')}
+                className={`px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${activeTab === 'game' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                🎮 Kuis Game ({gameData.length})
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+            <h3 className="font-bold text-gray-800 text-sm">
+              {activeTab === 'practice' && `Database Nilai Latihan Siswa — ${teacher ? teacher.subject : 'Semua Mapel'}`}
+              {activeTab === 'students' && `Database Siswa Terdaftar ${selectedClassFilter !== 'ALL' ? `- Kelas ${selectedClassFilter}` : ''}`}
+              {activeTab === 'tka' && 'Database Nilai Tryout TKA Siswa'}
+              {activeTab === 'game' && 'Database Skor Kuis Edukatif'}
+            </h3>
+            <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full font-medium">
+              Realtime Database 🟢
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="p-12 text-center text-gray-400">Memuat data dari database...</div>
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-100/75 text-gray-700 text-xs uppercase tracking-wider font-bold border-b border-gray-200">
+                    <th className="p-3.5">No</th>
+                    <th className="p-3.5">Nama Siswa</th>
+                    <th className="p-3.5">Kelas</th>
+                    <th className="p-3.5">Absen</th>
+                    {activeTab === 'practice' && <th className="p-3.5">Mata Pelajaran</th>}
+                    {activeTab === 'practice' && <th className="p-3.5">Aktivitas</th>}
+                    {activeTab === 'practice' && <th className="p-3.5">Nilai</th>}
+                    {activeTab === 'tka' && <th className="p-3.5">Skor TKA</th>}
+                    {activeTab === 'game' && <th className="p-3.5">Skor Kuis</th>}
+                    {activeTab === 'students' && <th className="p-3.5">Poin Aktif</th>}
+                    <th className="p-3.5">Waktu Pengerjaan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                  {activeTab === 'practice' && filteredPractice.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-3.5 font-semibold text-gray-400">{idx + 1}</td>
+                      <td className="p-3.5 font-medium text-gray-900">{item.studentName}</td>
+                      <td className="p-3.5 font-bold text-indigo-600">Kelas {item.studentClass}</td>
+                      <td className="p-3.5">{item.absensi}</td>
+                      <td className="p-3.5 font-semibold text-gray-800">{item.subject} (Kls {item.grade})</td>
+                      <td className="p-3.5 text-xs text-gray-600">{item.activity}</td>
+                      <td className="p-3.5 font-bold text-emerald-600">{item.score}</td>
+                      <td className="p-3.5 text-xs text-gray-500">{new Date(item.timestamp).toLocaleString('id-ID')}</td>
+                    </tr>
+                  ))}
+
+                  {activeTab === 'students' && filteredStudents.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-3.5 font-semibold text-gray-400">{idx + 1}</td>
+                      <td className="p-3.5 font-medium text-gray-900">{item.name}</td>
+                      <td className="p-3.5 font-bold text-indigo-600">Kelas {item.class}</td>
+                      <td className="p-3.5">{item.absensi}</td>
+                      <td className="p-3.5 font-bold text-blue-600">⭐ {item.points}</td>
+                      <td className="p-3.5 text-xs text-gray-500">{item.createdAt ? new Date(item.createdAt).toLocaleString('id-ID') : '-'}</td>
+                    </tr>
+                  ))}
+
+                  {activeTab === 'tka' && tkaData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-3.5 font-semibold text-gray-400">{idx + 1}</td>
+                      <td className="p-3.5 font-medium text-gray-900">{item.studentName}</td>
+                      <td className="p-3.5 font-bold text-indigo-600">Kelas {item.studentClass}</td>
+                      <td className="p-3.5">{item.absensi}</td>
+                      <td className="p-3.5 font-bold text-blue-600">{item.score} / 100</td>
+                      <td className="p-3.5 text-xs text-gray-500">{new Date(item.timestamp).toLocaleString('id-ID')}</td>
+                    </tr>
+                  ))}
+
+                  {activeTab === 'game' && gameData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-3.5 font-semibold text-gray-400">{idx + 1}</td>
+                      <td className="p-3.5 font-medium text-gray-900">{item.studentName}</td>
+                      <td className="p-3.5 font-bold text-indigo-600">Kelas {item.studentClass}</td>
+                      <td className="p-3.5">{item.absensi}</td>
+                      <td className="p-3.5 font-bold text-yellow-600">⭐ {item.score} Poin</td>
+                      <td className="p-3.5 text-xs text-gray-500">{new Date(item.timestamp).toLocaleString('id-ID')}</td>
+                    </tr>
+                  ))}
+
+                  {((activeTab === 'practice' && filteredPractice.length === 0) ||
+                    (activeTab === 'students' && filteredStudents.length === 0) ||
+                    (activeTab === 'tka' && tkaData.length === 0) ||
+                    (activeTab === 'game' && gameData.length === 0)) && (
+                    <tr>
+                      <td colSpan="7" className="p-12 text-center text-gray-400 font-medium">
+                        Tidak ada data siswa atau nilai yang ditemukan sesuai filter kelas dan mata pelajaran Anda.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProgressRoom = ({ user, setView, showModal }) => {
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto w-full">
+      <Header title="Prestasi & Profil" subtitle={user.name} />
+      <div className="p-5 space-y-5">
+        <Card className="text-center p-6 bg-gradient-to-br from-blue-600 to-indigo-700 text-white">
+          <div className="text-5xl mb-2">🏆</div>
+          <h2 className="text-2xl font-bold">{user.points} Poin</h2>
+          <p className="text-blue-200 text-sm">Kelas {user.class} • Absen {user.absensi}</p>
+        </Card>
+
+        <Card>
+          <h3 className="font-bold text-gray-800 mb-3">Badge Diperoleh</h3>
+          <div className="flex flex-wrap gap-2">
+            {user.badges.map((b, i) => (
+              <span key={i} className="bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-xl text-xs font-bold">
+                {b}
+              </span>
+            ))}
+          </div>
+        </Card>
+
+        <Button variant="secondary" onClick={() => setView('teacherLogin')}>
+          🔐 Login Ruang Guru (Spreadsheet)
+        </Button>
+
+        <Button variant="danger" onClick={() => {
+          showModal({
+            title: 'Keluar Akun',
+            message: 'Apakah kamu yakin ingin keluar dari akun ini?',
+            confirmText: 'Keluar',
+            onConfirm: () => setView('login')
+          });
+        }}>
+          Keluar Akun
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default function App() {
+  const [view, setView] = useState('splash');
+  const [user, setUser] = useState(null);
+  const [teacher, setTeacher] = useState(null);
+  const [selectedMapel, setSelectedMapel] = useState(null);
+  const [selectedGradeView, setSelectedGradeView] = useState(7);
+  const [modalConfig, setModalConfig] = useState({ isOpen: false });
+
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, () => {});
+    return () => unsubscribe();
+  }, []);
+
+  const showModal = (config) => setModalConfig({ ...config, isOpen: true });
+  const closeModal = () => setModalConfig({ isOpen: false });
+
+  const NavItem = ({ icon, label, targetView }) => {
+    const active = view === targetView || (targetView === 'mapel' && view === 'mapelDetail');
+    return (
+      <button 
+        onClick={() => setView(targetView)}
+        className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${active ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+      >
+        <span className="text-2xl">{icon}</span>
+        <span className="text-[10px] font-bold">{label}</span>
+      </button>
+    );
+  };
+
+  let content = null;
+  switch (view) {
+    case 'splash':
+      content = <SplashScreen onFinish={() => setView('login')} />;
+      break;
+    case 'login':
+      content = <IdentityScreen onLogin={(userData) => { setUser(userData); setView('dashboard'); }} setView={setView} />;
+      break;
+    case 'teacherLogin':
+      content = <TeacherLoginScreen onTeacherLogin={(teacherData) => setTeacher(teacherData)} setView={setView} showModal={showModal} />;
+      break;
+    case 'admin':
+      content = <AdminSpreadsheetView teacher={teacher} setView={setView} />;
+      break;
+    case 'dashboard':
+      content = <Dashboard user={user} setView={setView} setSelectedGradeView={setSelectedGradeView} showModal={showModal} />;
+      break;
+    case 'mapel':
+      content = <MapelList setView={setView} setSelectedMapel={setSelectedMapel} gradeView={selectedGradeView} />;
+      break;
+    case 'mapelDetail':
+      content = <SubjectDetail mapel={selectedMapel} setView={setView} gradeView={selectedGradeView} user={user} showModal={showModal} />;
+      break;
+    case 'game':
+      content = <GameRoom setView={setView} user={user} setUser={setUser} showModal={showModal} />;
+      break;
+    case 'progress':
+      content = <ProgressRoom user={user} setView={setView} showModal={showModal} />;
+      break;
+    case 'latihan':
+      content = <LatihanRoom setView={setView} />;
+      break;
+    case 'tka':
+      content = <TKARoom setView={setView} />;
+      break;
+    case 'tkaTryout':
+      content = <TKATryoutViewer setView={setView} user={user} showModal={showModal} />;
+      break;
+    case 'tkaPembahasan':
+      content = <TKAPembahasanViewer setView={setView} />;
+      break;
+    case 'litnum':
+      content = <TKARoom setView={setView} />;
+      break;
+    default:
+      content = <Dashboard user={user} setView={setView} setSelectedGradeView={setSelectedGradeView} showModal={showModal} />;
+  }
+
+  return (
+    <div className="bg-gray-200 min-h-screen font-sans text-gray-900 selection:bg-blue-200">
+      <style dangerouslySetInnerHTML={{__html: `
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+      `}} />
+      
+      <div className="max-w-md mx-auto bg-white min-h-screen relative shadow-2xl overflow-hidden sm:border-x sm:border-gray-300">
+        {content}
+        <CustomModal config={modalConfig} onClose={closeModal} />
+
+        {user && view !== 'splash' && view !== 'login' && view !== 'teacherLogin' && view !== 'admin' && (
+          <div className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 h-16 flex justify-around items-center px-2 pb-safe z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
+            <NavItem icon="🏠" label="Home" targetView="dashboard" />
+            <NavItem icon="📚" label="Belajar" targetView="mapel" />
+            <NavItem icon="🎮" label="Game" targetView="game" />
+            <NavItem icon="🏆" label="Prestasi" targetView="progress" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
